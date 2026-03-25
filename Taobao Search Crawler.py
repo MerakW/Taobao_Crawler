@@ -1,12 +1,11 @@
 # 导入所需模块
-from time import sleep        # 用于控制等待时间
+from time import sleep
+import random  # 新增：用于生成随机时间，模拟人类行为
+import csv
+import json
 
 # 导入 DrissionPage 库的浏览器控制类
 from DrissionPage import ChromiumPage, ChromiumOptions
-
-# 导入 CSV 文件操作模块
-import csv
-import json
 
 # ===============================================
 # 浏览器配置与初始化
@@ -23,18 +22,43 @@ co.set_argument('--autoplay-policy=user-gesture-required')
 # 禁用媒体播放始终允许的功能
 co.set_argument('--disable-features=MediaPlaybackAlwaysAllow')
 
+# 【新增核心优化】：指定用户数据目录，保留 Cookie 和登录状态
+# 首次运行请手动登录淘宝，后续运行将自动复用登录状态，极大降低风控概率
+co.set_user_data_path(r'./chrome_data')
+
 # 创建浏览器实例（基于配置）
 dp = ChromiumPage(co)
 
 # ===============================================
-# 翻页操作函数
+# 行为模拟与风控处理函数
 # ===============================================
 
-def scroll_to_bottom():
-    """滚动到页面底部"""
-    print("正在滚动到页面底部...")
+def check_and_handle_captcha():
+    """【新增】检查是否出现滑块，若出现则暂停等待人工处理"""
+    print("正在检查风控状态...")
+    # 淘宝常见的风控标志，比如包含特定文字或滑块 iframe
+    if dp.ele('#b5mmain', timeout=1) or dp.ele('@class:nc_wrapper', timeout=1) or "验证码" in dp.title:
+        print("\n⚠️ 警告：触发了淘宝风控滑块！")
+        print('\a')  # 终端播放提示音
+        input("👉 请在弹出的浏览器中手动完成滑块验证，完成后请在此处按【回车键】继续...")
+        print("收到继续指令，恢复抓取...")
+        sleep(2)
+        return True
+    return False
+
+def human_scroll():
+    """【修改】模拟人类平滑滚动，替代瞬间到底部的机械行为"""
+    print("正在模拟人类向下浏览页面...")
+    # 随机滚动 3 到 6 次
+    for _ in range(random.randint(3, 6)):
+        # 每次随机向下滚动 300 到 800 像素
+        dp.scroll.down(random.randint(300, 800))
+        # 每次滚动后随机停顿 0.5 到 1.5 秒
+        sleep(random.uniform(0.5, 1.5))
+    
+    # 最后再滚到底部确保底部分页元素完全加载
     dp.scroll.to_bottom()
-    sleep(2)  # 等待页面加载
+    sleep(random.uniform(1.0, 2.0))
 
 def find_next_page_button():
     """查找下一页按钮"""
@@ -48,11 +72,12 @@ def find_next_page_button():
         return None
 
 def click_next_page(btn):
-    """点击下一页按钮"""
+    """【修改】点击下一页按钮"""
     try:
         btn.click()
         print("已点击下一页按钮")
-        sleep(3)  # 等待页面加载
+        # 改为随机等待时间，避免固定 sleep 带来的机器特征
+        sleep(random.uniform(2.5, 4.5)) 
         return True
     except Exception as e:
         print(f"点击下一页按钮失败: {e}")
@@ -166,9 +191,6 @@ def collect_and_parse_data():
                             'auctionURL': auctionURL
                         }
                         
-                        # 打印商品信息（调试用）
-                        print(item_dict)
-                        
                         # 将商品数据写入 CSV 文件
                         with open(OUTPUT_CSV, 'a', newline='', encoding='utf-8-sig') as f:
                             writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
@@ -226,16 +248,19 @@ def main():
         while True:
             print(f"\n=== 正在处理第 {page_count} 页 ===")
             
-            # 滚动到底部
-            scroll_to_bottom()
+            # 【新增】1. 检查并处理风控验证码
+            check_and_handle_captcha()
             
-            # 采集并解析页面数据
+            # 【修改】2. 使用人类平滑滚动模式
+            human_scroll()
+            
+            # 3. 采集并解析页面数据
             collect_and_parse_data()
             
-            # 查找下一页按钮
+            # 4. 查找下一页按钮
             next_btn = find_next_page_button()
             if next_btn:
-                # 点击下一页
+                # 【修改】点击下一页（内部已加入随机延迟）
                 if click_next_page(next_btn):
                     page_count += 1
                 else:
